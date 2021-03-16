@@ -1,0 +1,25 @@
+<html>
+  <head>
+    <title>Access Control Management</title>
+    <meta charset="utf-8" />
+    <link href="{{ url_for('static', filename='css/base.css') }}" rel="stylesheet" type="text/css" />
+  </head>
+  <body>
+    <div class="w-full h-14 bg-gradient-to-r from-blue-400 to-blue-500 shadow-md flex items-center px-5 text-white">
+      <span class="font-bold text-xl">Access Control Manager</span>
+      {% if authenticated %}
+      <span class="flex-grow"></span>
+      <span class="mr-3">{{ current_user.username }}</span>
+      <a
+        href="{{ url_for('logout') }}"
+        type="button"
+        class="bg-white text-blue-500 px-3 py-1 rounded-2xl font-bold"
+        >Log out</a>
+      {% endif %}
+    </div>
+    <div>
+      {% block content %}
+      {% endblock %}
+    </div>
+  </body>
+</html>
