@@ -4,7 +4,7 @@
 from flask import Flask, Response, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_jwt_extended import JWTManager, jwt_required, create_access_token, set_access_cookies, unset_access_cookies, current_user, get_jwt_identity, get_current_user
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token, set_access_cookies, unset_access_cookies, current_user, get_jwt_identity, get_current_user, verify_jwt_in_request
 
 from tsoha.config import get_config
 
@@ -50,6 +50,14 @@ from tsoha.models import User
 
 @app.context_processor
 def current_user_context():
+    try:
+        verify_jwt_in_request(optional=True)
+    except Exception as e:
+        return dict(
+            authenticated=False,
+            current_user=None,
+        )
+
     if not get_jwt_identity():
         return dict(
             authenticated=False,
@@ -64,7 +72,7 @@ def current_user_context():
 @app.route('/')
 @jwt_required()
 def default_route():
-    return render_template('main.html')
+    return render_template('dashboard.html')
 
 @app.route('/login')
 @jwt_required(optional=True)
