@@ -107,3 +107,7 @@ def logout():
     response = redirect(url_for('login_view'))
     unset_access_cookies(response)
     return response
+
+@app.route('/editor')
+def editor():
+    return render_template('editor.html')
