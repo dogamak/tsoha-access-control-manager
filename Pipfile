@@ -13,6 +13,7 @@ flask-assets = "*"
 bcrypt = "*"
 flask-jwt = "*"
 flask-jwt-extended = "*"
+js2py = "*"
 
 [dev-packages]
 

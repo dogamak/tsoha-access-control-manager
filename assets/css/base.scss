@@ -2,5 +2,9 @@ body {
   @apply bg-gray-100;
 }
 
+.group-list-table tr {
+  @apply px-2;
+}
+
 @tailwind base;
 @tailwind utilities;

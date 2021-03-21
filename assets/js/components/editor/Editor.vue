@@ -20,13 +20,12 @@
       <div class="rounded-xl bg-white overflow-hidden shadow-xl" style="width: 13em;" v-if="rooms.length > 0">
         <div class="bg-blue-500 font-bold text-white px-5 py-1">Rooms</div>
         <div>
-          <div class="px-5 py-1" v-for="(room, i) in rooms">
+          <div class="px-5 py-1" v-for="room in rooms" :key="room.name">
             <span>{{ room.name }}</span>
           </div>
         </div>
       </div>
     </div>
-    <dialogs-wrapper></dialogs-wrapper>
   </div>
 </template>
 
@@ -35,7 +34,7 @@
   import FloorSelector from './FloorSelector.vue';
   import RoomOptionsDialog from './RoomOptionsDialog.vue';
 
-  import { create as createDialog } from 'vue-modal-dialogs';
+  // import { create as createDialog } from 'vue-modal-dialogs';
 
   import * as d3 from 'd3';
 
@@ -51,7 +50,7 @@
     magnitude: (a) => Math.sqrt(Math.pow(a.x, 2) + Math.pow(a.y, 2)),
   };
 
-  const roomOptionsDialog = createDialog(RoomOptionsDialog);
+  // const roomOptionsDialog = createDialog(RoomOptionsDialog);
 
   export default {
     components: { Toolbar, FloorSelector },
@@ -254,11 +253,11 @@
 
               console.log('Room', visited);
 
-              roomOptionsDialog()
+              /*roomOptionsDialog()
                 .then(({ name }) => this.rooms.push({
                   name,
                   segments: visited,
-                }));
+                }));*/
             },
           },
           {
@@ -613,5 +612,9 @@
   .dialog {
     position: relative;
     z-index: 1000;
+  }
+
+  .debug {
+    display: none;
   }
 </style>

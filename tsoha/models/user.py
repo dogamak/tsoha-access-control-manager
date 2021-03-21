@@ -8,3 +8,9 @@ class User(db.Model):
     username = db.Column(db.String, unique=True, nullable=False)
     password = db.Column(db.LargeBinary, nullable=False)
 
+    def toJSON(self):
+        return {
+            "id": self.id,
+            "username": self.username,
+        }
+

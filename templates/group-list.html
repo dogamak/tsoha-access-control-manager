@@ -1,0 +1,35 @@
+{% extends "main.html" %}
+
+{% block content %}
+<div class="flex justify-start">
+  <div class="pt-10 px-10 flex items-stretch md:items-baseline flex-col md:flex-row gap-10">
+    <div class="rounded-xl bg-white shadow-lg overflow-hidden w-full">
+      <div class="bg-gradient-to-r from-blue-400 to-blue-500 w-full h-11 font-bold items-center flex px-4 text-blue-50">
+        Groups
+      </div>
+      <div class="py-2 px-2">
+        <table class="group-list-table w-full">
+        {% for group in groups %}
+        <tr class="group cursor-pointer" onclick="window.location = '{{ url_for('group_details', id = group.group_id) }}'">
+            <td class="p-2 group-hover:bg-gray-100 rounded-l-full">
+              <div class="rounded-full w-8 h-8 bg-gray-300"></div>
+            </td>
+            <td class="pl-2 pr-8 py-2 group-hover:bg-gray-100">
+              <span class="text-sm text-gray-800">{{ group.group.name }}</span>
+            </td>
+            <td class="p-2 group-hover:bg-gray-100 text-right">
+              <span class="text-sm text-gray-500">{{ group.group.subgroups | length }} sub-groups</span>
+            </td>
+            <td class="p-2 pr-4 group-hover:bg-gray-100 rounded-r-full text-right">
+              <span class="text-sm text-gray-500">{{ group.group.members | length }} members</span>
+            </td>
+          </tr>
+        {% endfor %}
+        </table>
+      </div>
+    </div>
+  </div>
+  {% block details %}
+  {% endblock %}
+</div>
+{% endblock %}

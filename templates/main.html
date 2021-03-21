@@ -5,21 +5,23 @@
     <link href="{{ url_for('static', filename='css/base.css') }}" rel="stylesheet" type="text/css" />
   </head>
   <body>
-    <div class="w-full h-14 bg-gradient-to-r from-blue-400 to-blue-500 shadow-md flex items-center px-5 text-white">
-      <span class="font-bold text-xl">Access Control Manager</span>
-      {% if authenticated %}
-      <span class="flex-grow"></span>
-      <span class="mr-3">{{ current_user.username }}</span>
-      <a
-        href="{{ url_for('logout') }}"
-        type="button"
-        class="bg-white text-blue-500 px-3 py-1 rounded-2xl font-bold"
-        >Log out</a>
-      {% endif %}
+    <div id="main">
+        {% block content %}
+        {% endblock %}
     </div>
-    <div>
-      {% block content %}
-      {% endblock %}
-    </div>
+    {% if current_user %}
+    <script>window._current_user = {{ current_user | safe }};</script>
+    {% endif %}
+    {% if props %}
+    <script>window._page_props = {{ props | safe }};</script>
+    {% endif %}
+    {% if router %}
+    <script>
+      window._flask_routes = {{ router | safe }};
+     </script>
+    {% endif %}
+    {% if component %}
+    <script src="{{ url_for('static', filename='js/' + component + '.bundle.js') }}"></script>
+    {% endif %}
   </body>
 </html>
