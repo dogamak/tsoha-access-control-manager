@@ -13,7 +13,7 @@ from sqlalchemy.orm import aliased
 
 from tsoha.config import get_config
 
-app = Flask(__name__, template_folder='../templates', static_folder='../dist')
+app = Flask(__name__, template_folder='../build/templates', static_folder='../build')
 
 get_config(app)
 
@@ -202,4 +202,4 @@ class CustomEncoder(json.JSONEncoder):
 
 def render_component(component, **props):
     props = json.dumps(props, cls=CustomEncoder)
-    return render_template('main.html', component=component, props=props, router=router())
+    return render_template(component + '.html', props=props, router=router())

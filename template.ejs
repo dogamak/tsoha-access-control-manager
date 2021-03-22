@@ -1,0 +1,24 @@
+<html>
+  <head>
+    <title>Access Control Management</title>
+    <meta charset="utf-8" />
+    <link href="{{ url_for('static', filename='css/base.css') }}" rel="stylesheet" type="text/css" />
+    <script>
+        {% if current_user %}
+        window._current_user = {{ current_user | safe }};
+        {% endif %}
+        {% if props %}
+        window._page_props = {{ props | safe }};
+        {% endif %}
+        {% if router %}
+        window._flask_routes = {{ router | safe }};
+        {% endif %}
+     </script>
+  </head>
+  <body>
+    <div id="main">
+        {% block content %}
+        {% endblock %}
+    </div>
+  </body>
+</html>

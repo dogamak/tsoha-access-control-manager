@@ -16,9 +16,3 @@
         },
     };
 </script>
-
-<style>
-    div {
-        @apply bg-red-600;
-    }
-</style>
