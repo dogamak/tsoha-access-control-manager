@@ -3,4 +3,5 @@ SQLALCHEMY_DATABASE_URI = "sqlite:///app.db"
 SQLALCHEMY_TRACK_MODIFICATIONS = false
 JWT_SECRET_KEY = "super-secret"
 JWT_COOKIE_SECURE = false
-JWT_TOKEN_LOCATION = [ "cookies" ]
+JWT_TOKEN_LOCATION = [ "cookies", "headers" ]
+JWT_CSRF_CHECK_FORM = true

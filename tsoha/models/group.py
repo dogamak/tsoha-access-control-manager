@@ -2,32 +2,22 @@
 # -*- coding: utf-8 -*-
 
 from tsoha import db
-from tsoha.models import User
+from tsoha.models import User, Base
 
 from sqlalchemy import Table, and_
 
-class Group(db.Model):
+class Group(Base):
+    __public__ = ('id', 'name', 'parent', 'subgroups', 'members')
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, nullable=False)
     parent_id = db.Column(db.Integer, db.ForeignKey(id))
     parent = db.relationship("Group", remote_side=[id], backref="subgroups")
 
-    def toJSON_shallow(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-        }
+class GroupMembership(Base):
+    __depth__ = 0
+    __public__ = ('user', 'group', 'create_users', 'manage_users')
 
-    def toJSON(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "parent": self.parent.toJSON_shallow() if self.parent else None,
-            "subgroups": [ sub.toJSON_shallow() for sub in self.subgroups ],
-            "members": [ membership.user for membership in self.members ],
-        }
-
-class GroupMembership(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey(User.id), primary_key=True)
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'), primary_key=True)
     create_users = db.Column(db.Boolean, default=False, nullable=False)
@@ -35,11 +25,3 @@ class GroupMembership(db.Model):
 
     user = db.relationship(User, backref='groups')
     group = db.relationship(Group, backref='members')
-
-    def toJSON(self):
-        return {
-            "user": self.user,
-            "group": self.group,
-            "create_users": self.create_users,
-            "manage_users": self.manage_users,
-        }

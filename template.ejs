@@ -3,17 +3,8 @@
     <title>Access Control Management</title>
     <meta charset="utf-8" />
     <link href="{{ url_for('static', filename='css/base.css') }}" rel="stylesheet" type="text/css" />
-    <script>
-        {% if current_user %}
-        window._current_user = {{ current_user | safe }};
-        {% endif %}
-        {% if props %}
-        window._page_props = {{ props | safe }};
-        {% endif %}
-        {% if router %}
-        window._flask_routes = {{ router | safe }};
-        {% endif %}
-     </script>
+    <script src="http://localhost:35729/livereload.js"></script>
+    <script>window._bootstrap_data = {{ bootstrap | safe }};</script>
   </head>
   <body>
     <div id="main">

@@ -5,8 +5,8 @@ import Main from './components/Main.vue';
 
 export function init(component) {
     const app = createApp({
-        render: () => h(Main, {},
-            () => h(component, window._page_props)
+        render: () => h(Main, { breadcrumb: window._bootstrap_data.breadcrumb },
+            () => h(component, window._bootstrap_data.props)
         ),
     });
 

@@ -3,6 +3,7 @@ const path = require('path');
 const { VueLoaderPlugin } = require('vue-loader');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractLoader = require('mini-css-extract-plugin');
+const LiveReloadPlugin = require('webpack-livereload-plugin');
 
 const page_files = glob.sync('assets/js/components/pages/**/*.vue');
 
@@ -38,6 +39,17 @@ module.exports = {
         {
           test: /\.vue$/,
           use: 'vue-loader',
+        },
+        {
+          test: /\.js$/,
+          exclude: /node_modules/,
+          use: {
+            loader: 'babel-loader',
+            options: {
+              presets: ['@babel/preset-env'],
+              plugins: ['@vue/babel-plugin-jsx', '@babel/plugin-transform-regenerator', '@babel/plugin-transform-runtime'],
+            },
+          },
         },
         {
           test: /\.css$/,
@@ -95,6 +107,8 @@ module.exports = {
       new VueLoaderPlugin(),
       new MiniCssExtractLoader({
         filename: 'css/[name].css',
+      }),
+      new LiveReloadPlugin({
       }),
       ...plugins,
     ],

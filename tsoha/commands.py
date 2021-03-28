@@ -13,11 +13,12 @@ from tsoha.models import User, Group, GroupMembership
 @click.command(name='create-user')
 @click.argument('username')
 @click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True)
+@click.option('--name', prompt=True)
 @with_appcontext
-def create_user(username, password):
+def create_user(username, password, name):
     hashed = hash_password(password)
 
-    user = User(username=username, password=hashed)
+    user = User(username=username, password=hashed, name=name)
 
     db.session.add(user)
     db.session.commit()
