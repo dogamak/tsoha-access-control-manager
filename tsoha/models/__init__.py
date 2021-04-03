@@ -24,3 +24,4 @@ class Base(db.Model):
 
 from .user import User, File
 from .group import Group, GroupMembership
+from .permissions import Permission, PermissionExpressionIndex

@@ -6,12 +6,11 @@ name = "pypi"
 [packages]
 flask = "*"
 toml = "*"
-sqlalchemy = "==1.3.23" # SQLAlchemy 1.4 broke flask-sqlalchemy, so force an older version to be used
-flask-sqlalchemy = "~=2.0"
+sqlalchemy = "*" # SQLAlchemy 1.4 broke flask-sqlalchemy, so force an older version to be used
+flask-sqlalchemy = "*"
 flask-migrate = "*"
 flask-assets = "*"
 bcrypt = "*"
-flask-jwt = "*"
 flask-jwt-extended = "*"
 js2py = "*"
 
