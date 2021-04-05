@@ -14,6 +14,7 @@ from tsoha.models import Base
 
 class User(Base):
     __public__ = ('id', 'name', 'username', 'email', 'role', 'supervisor', 'avatar')
+    __permission_mapping__ = ('user', 'id', 'id')
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, nullable=False)

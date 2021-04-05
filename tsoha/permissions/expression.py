@@ -131,6 +131,9 @@ class ModelExpression(Expression):
     def __str__(self):
         return self.name
 
+class WildcardExpression(Expression):
+    pass
+
 class JoinExpression(Expression):
     def __init__(self, lhs, relationship):
         self.lhs = lhs
@@ -192,6 +195,7 @@ class UnexpectedToken(Exception):
 # type_op   := "->"
 # open_par  := "("
 # close_par := ")"
+# wildcard_op := "*"
 
 # model_expr    := <ident>
 # join_expr     := <expr> <join_op> <ident>
@@ -201,7 +205,7 @@ class UnexpectedToken(Exception):
 # instance_expr := <ident> <open_par> <argument_list> <close_par>
 # expr          := <join_expr> | <filter_expr> | <integer> | <model_expr> | <text> | <instance_expr>
 
-# expr       := <text> | <integer> | <parameter> | <expr_r>
+# expr       := <text> | <integer> | <parameter> | <wildcard_op> | <expr_r>
 # expr2      := <ident> <expr_r>
 # expr_r     := <type_op> <ident> <expr_opt>
 #             | <filter_op> <ident> <open_par> <expr> <close_par> <expr_opr>
@@ -243,21 +247,28 @@ class Parser:
 
         return token
     
+    def check_token(self, *kinds):
+        token = self.peek_token()
+
+        if token.kind in kinds:
+            return self.next_token()
+        else:
+            return None
+    
     def parse_identifier(self):
         return self.expect_token(TokenKind.Identifier).value
 
     def parse_expr(self):
-        token = self.peek_token()
-
-        if token.kind in (TokenKind.Text, TokenKind.Integer):
-            self.next_token()
+        if token := self.check_token(TokenKind.Text, TokenKind.Integer):
             return token.value
         
-        if token.kind == TokenKind.Parameter:
-            self.next_token()
+        if token := self.check_token(TokenKind.Parameter):
             return ParameterExpression(token.value)
         
-        self.expect_token(TokenKind.Identifier)
+        if token := self.check_token(TokenKind.WildcardOperator):
+            return WildcardExpression()
+        
+        token = self.expect_token(TokenKind.Identifier)
 
         if self.peek_token().kind == TokenKind.OpenParenthesis:
             return self.parse_instance_rest(token.value)
@@ -281,31 +292,23 @@ class Parser:
         return [ expr ] + self.parse_argument_list_rest()
     
     def parse_argument_list_rest(self):
-        token = self.peek_token()
-
-        if token.kind == TokenKind.CloseParenthesis:
-            self.next_token()
+        if self.check_token(TokenKind.CloseParenthesis):
             return []
-        elif token.kind == TokenKind.ArgumentListSeparator:
-            self.next_token()
+        elif self.check_token(TokenKind.ArgumentListSeparator):
             expr = self.parse_expr()
             return [expr] + self.parse_argument_list_rest()
         else:
             raise Exception("Expected an expression")
     
     def parse_expr_rest(self, lhs):
-        token = self.peek_token()
-
-        if token.kind == TokenKind.JoinOperator:
-            self.next_token()
+        if self.check_token(TokenKind.JoinOperator):
             return self.parse_join_op(lhs)
         
-        elif token.kind == TokenKind.FilterOperator:
-            self.next_token()
+        elif self.check_token(TokenKind.FilterOperator):
             return self.parse_filter_op(lhs)
         
         else:
-            raise UnexpectedToken(token, 'expected either a filter or a join operator')
+            raise UnexpectedToken(self.peek_token(), 'expected either a filter or a join operator')
 
     def parse_expr_opt(self, lhs):
         try:
@@ -331,7 +334,6 @@ class Parser:
         return self.parse_expr_opt(expr)
 
 
-
 class ExpressionVisitor:
     def __init__(self, context=None):
         if context is None:
@@ -339,23 +341,26 @@ class ExpressionVisitor:
 
         self.context = context
 
-    def visit_model_expression(self, name):
-        pass
+    def visit_model_expression(self, expr):
+        return expr
     
-    def visit_join_expression(self, lhs, name):
-        pass
+    def visit_join_expression(self, expr):
+        return expr
 
-    def visit_filter_expression(self, lhs, name, value):
-        pass
+    def visit_filter_expression(self, expr):
+        return expr
 
-    def visit_instance_expression(self, name, args):
-        pass
+    def visit_instance_expression(self, expr):
+        return expr
 
-    def visit_parameter_expression(self, name):
-        if name in self.context:
-            return self.visit(self.context[name])
+    def visit_parameter_expression(self, expr):
+        if expr.name in self.context:
+            return self.visit(self.context[expr.name])
         
-        raise Exception(f'no parameter named {repr(name)} in scope')
+        raise Exception(f'no parameter named {repr(expr.name)} in scope')
+    
+    def visit_wildcard_expression(self, expr):
+        return expr
 
     def visit_integer(self, value):
         return value
@@ -364,281 +369,22 @@ class ExpressionVisitor:
         return value
 
     def visit(self, expr):
-        if isinstance(expr, ModelExpression):
-            return self.visit_model_expression(expr.name)
-        elif isinstance(expr, JoinExpression):
-            return self.visit_join_expression(self.visit(expr.lhs), expr.relationship)
-        elif isinstance(expr, FilterExpression):
-            return self.visit_filter_expression(self.visit(expr.lhs), expr.name, self.visit(expr.value))
-        elif isinstance(expr, ParameterExpression):
-            return self.visit_parameter_expression(expr.name)
-        elif isinstance(expr, InstanceExpression):
-            return self.visit_instance_expression(expr.name, [
-                self.visit(arg) for arg in expr.arguments
-            ])
-        elif isinstance(expr, int):
-            return self.visit_integer(expr)
-        elif isinstance(expr, str):
-            return self.visit_text(expr)
-        else:
-            raise Exception(f"Invalid experession: {repr(expr)}")
+        methods = [
+            (ModelExpression,     self.visit_model_expression),
+            (JoinExpression,      self.visit_join_expression),
+            (FilterExpression,    self.visit_filter_expression),
+            (WildcardExpression,  self.visit_wildcard_expression),
+            (ParameterExpression, self.visit_parameter_expression),
+            (InstanceExpression,  self.visit_instance_expression),
+            (int,                 self.visit_integer),
+            (str,                 self.visit_text),
+        ]
 
+        for expr_class, visitor in methods:
+            if isinstance(expr, expr_class):
+                return visitor(expr)
 
-class QueryBuilder(ExpressionVisitor):
-    def __init__(self, model, context=None):
-        super().__init__(context)
-        self.model = model
-
-    def visit_model_expression(self, name):
-        obj = self.model.get_object(name)
-        return select(obj.schema), obj
-    
-    def visit_join_expression(self, lhs, name):
-        lhs, lhs_type = lhs
-        value_type, joiner = lhs_type.get_relation(name)
-        value = joiner(value_type.schema, aliased(lhs_type.schema, alias=lhs))
-        return value, value_type
-    
-    def visit_filter_expression(self, lhs, name, value):
-        lhs, lhs_type = lhs
-        value, value_type = value
-
-        a = aliased(lhs_type.schema, alias=lhs.subquery())
-
-        if value_type in (str, int):
-            result = select(a).where(getattr(a, name) == value)
-        else:
-            result = select(a).where(getattr(a, name).in_(value))
-
-        return result, lhs_type
-    
-    def visit_integer(self, value):
-        return value, int
-    
-    def visit_text(self, value):
-        return value, str
-    
-    def build(self, ast):
-        query, _ = self.visit(ast)
-        return query
-
-
-"""class QueryValidator(ExpressionVisitor):
-    def __init__(self, model):
-        self.model = model
-
-    def visit_model_expression(self, name):
-        return self.model.get_object(name).schema
-    
-    def visit_join_expression(self, lhs, name):
-        value_type, _joiner = lhs_type.get_relation(name)
-        return getattr(value_type, name)
-    
-    def visit_filter_expression(self, lhs, name, value):
-        return lhs
-
-    def validate(self, ast):
-        try:
-            self.visit(ast)
-        except Exception:
-            return False
-        
-        return True
-
-
-class NewQueryBuilder:
-    def __init__(self, model):
-        self.model = model
-    
-    def build(self, ast):
-        return self.visit_expression(ast)
-    
-    def visit_expression(self, ast):
-        if isinstance(ast, ModelExpression):
-            return self.visit_model_expr(ast)
-        elif isinstance(ast, JoinExpression):
-            return self.visit_join_expr(ast)
-        elif isinstance(ast, FilterExpression):
-            return self.visit_filter_expr(ast)
-        elif isinstance(ast, (int, str)):
-            return ast, type(ast)
-        else:
-            raise Exception(f"Invalid experession: {repr(ast)}")
-    
-    def visit_model_expr(self, expr):
-        obj = self.model.get_object(expr.name)
-        return select(obj.schema), obj
-    
-    def visit_join_expr(self, expr):
-        lhs, lhs_type = self.visit_expression(expr.lhs)
-        value_type, joiner = lhs_type.get_relation(expr.relationship)
-        value = joiner(value_type.schema, aliased(lhs_type.schema, alias=lhs))
-        return value, value_type
-    
-    def visit_filter_expr(self, expr):
-        lhs, lhs_type = self.visit_expression(expr.lhs)
-        value, value_type = self.visit_expression(expr.value)
-
-        a = aliased(lhs_type.schema, alias=lhs.subquery())
-
-        if value_type in (str, int):
-            result = select(a).where(getattr(a, expr.name) == value)
-        else:
-            result = select(a).where(getattr(a, expr.name).in_(value))
-
-        return result, lhs_type
-
-
-class QueryBuilder:
-    def __init__(self, model, expression, template=None):
-        self.model = model
-        print(list(tokenize(expression)))
-        self.tokenizer = tokenize(expression)
-
-        self.lookback = None
-
-        self.template = template
-        self.template_tokenizer = None
-        self.template_tokens = []
-        self.template_tokenized = False
-    
-    def assert_token(self, kind):
-        token = self.next_token()
-
-        if token.kind == kind:
-            return token.value
-        else:
-            raise Exception(f'Expected an identifier, got {token.kind}')
-    
-    def next_token(self):
-        def inner():
-            if self.lookback:
-                token = self.lookback
-                self.lookback = None
-                return token
-
-            if self.template_tokenizer:
-                try:
-                    token = next(self.template_tokenizer)
-
-                    if not self.template_tokenized:
-                        self.template_tokens.append(token)
-                    
-                    return token
-                except StopIteration:
-                    self.template_tokenizer = None
-                    self.template_tokenized = True
-            
-            return next(self.tokenizer)
-        
-        token = inner()
-        print(f'Token: {token}')
-        return token
-    
-    def peek_token(self):
-        if self.lookback:
-            return self.lookback
-        else:
-            self.lookback = self.next_token()
-            return self.lookback
-    
-    def insert_template(self):
-        if not self.template:
-            return
-
-        if self.template_tokenizer:
-            return
-        
-        if self.peek_token().kind != TokenKind.TemplatePlaceholder:
-            return
-        
-        self.assert_token(TokenKind.TemplatePlaceholder)
-
-        if self.template_tokenized:
-            self.template_tokenizer = iter(self.template_tokens)
-        else:
-            self.template_tokenizer = tokenize(self.template)
-
-    
-    def validate(self):
-        self.insert_template()
-        root_obj_name = self.assert_token(TokenKind.Identifier)
-        obj = self.model.get_object(root_obj_name)
-
-        while True:
-            try:
-                op = self.next_token()
-            except StopIteration:
-                return True
-
-            if op.kind == TokenKind.FilterOperator:
-                field = self.assert_token(TokenKind.Identifier)
-                self.assert_token(TokenKind.OpenParenthesis)
-                _value = self.next_token()
-                self.assert_token(TokenKind.CloseParenthesis)
-
-                f = obj.get_filter(field)
-
-                if not f:
-                    raise Exception(f'Invalid filter "{field}" for object "{obj.schema.__tablename__}"')
-            
-            elif op.kind == TokenKind.SegmentSeparator:
-                child = self.assert_token(TokenKind.Identifier)
-
-                relation = obj.get_relation(child)
-
-                if not relation:
-                    raise Exception(f'Invalid relation "{child}" for object "{obj.schema.__tablename__}"')
-                
-                child_model, _joiner = relation
-                obj = child_model
-
-    
-    def build(self):
-        root_obj_name = self.assert_token(TokenKind.Identifier)
-
-        obj = self.model.get_object(root_obj_name)
-        query = select([obj.schema])
-
-        while True:
-            try:
-                op = self.next_token()
-            except StopIteration:
-                return query, obj
-
-            if op.kind == TokenKind.FilterOperator:
-                field = self.assert_token(TokenKind.Identifier)
-                self.assert_token(TokenKind.OpenParenthesis)
-                value = self.next_token()
-                self.assert_token(TokenKind.CloseParenthesis)
-
-                f = obj.get_filter(field)
-
-                if not f:
-                    raise Exception(f'Invalid filter "{field}" for object "{obj.schema.__tablename__}"')
-
-                subq = aliased(obj.schema, alias=query.subquery())
-                query = select([subq]).where(getattr(subq, field) == value.value)
-            
-            elif op.kind == TokenKind.SegmentSeparator:
-                child = self.assert_token(TokenKind.Identifier)
-
-                relation = obj.get_relation(child)
-
-                if not relation:
-                    raise Exception(f'Invalid relation "{child}" for object "{obj.schema.__tablename__}"')
-                
-                child_model, joiner = relation
-
-                a = child_model.schema
-                q = aliased(obj.schema, alias=query.subquery())
-
-                query = joiner(a, q)
-                obj = child_model
-        
-        return query, obj"""
-
-Model = declarative_base()
+        raise Exception(f"Invalid expression: {repr(expr)}")
 
 
 class ExpressionObj:
@@ -658,9 +404,21 @@ class ExpressionObj:
         return FilterObj(self, self.__model, name, value)
 
 
-def into_ast(value):
-    if isinstance(value, (str, int)):
+def into_ast_part(value):
+    if isinstance(value, (str, int, Expression)):
         return value
+    else:
+        return value.into_ast()
+
+
+def into_expression_ast(value, model=None):
+    if isinstance(value, str):
+        return Parser().parse(value)
+    elif isinstance(value, Expression):
+        return value
+    elif model is not None and hasattr(value, '__permission_mapping__') and isinstance(getattr(value, '__permission_mapping__'), tuple):
+        mapping = value.__permission_mapping__
+        return model.get_object(mapping[0]).filter(mapping[1], getattr(value, mapping[2]))
     else:
         return value.into_ast()
 
@@ -673,7 +431,7 @@ class FilterObj(ExpressionObj):
         self.value = value
     
     def into_ast(self):
-        return FilterExpression(into_ast(self.expr), self.name, into_ast(self.value))
+        return FilterExpression(into_ast_part(self.expr), self.name, into_ast_part(self.value))
 
 
 class Relation(ExpressionObj):
@@ -684,7 +442,7 @@ class Relation(ExpressionObj):
         self.definition = definition
     
     def into_ast(self):
-        return JoinExpression(into_ast(self.expr), self.name)
+        return JoinExpression(into_ast_part(self.expr), self.name)
 
 class Parameter(ExpressionObj):
     def __init__(self, name):
@@ -695,56 +453,92 @@ class Parameter(ExpressionObj):
         return ParameterExpression(self.name)
 
 
-import inspect
-
-def role(func):
-    args = [ Parameter(name) for name in inspect.signature(func).parameters ]
-    return func(*args)
-
-
 class ObjectDef(ExpressionObj):
     def __init__(self, model, schema):
         print(self)
         super().__init__(self)
         self.schema = schema
-        self.relations = {}
-        self.filters = []
+        self.relations = dict()
+        self.filters = dict()
         self.model = model
     
     def into_ast(self):
         return ModelExpression(self.schema.__tablename__)
 
-    def relation(self, relation, obj, joiner=None):
-        if joiner is None:
-            joiner = lambda a, q: select([a]).select_from(join(a, q))
-
-        self.relations[relation] = (obj, joiner)
+    def relation(self, relation, *args, **kwargs):
+        self.relations[relation] = RelationDef(self.model, relation, *args, **kwargs)
         return self
     
-    def add_filter(self, filter):
-        self.filters.append(filter)
+    def add_filter(self, name, *args, **kwargs):
+        self.filters[name] = FilterDef(self.model, name, *args, **kwargs)
         return self
 
-    def get_filter(self, filter):
-        return filter in self.filters
+    def get_filter(self, name):
+        return self.filters[name]
     
     def get_relation(self, relation):
-        relation = self.relations.get(relation)
+        return self.relations.get(relation)
+    
+    def get_primary_key(self):
+        return next(filter(lambda f: f.is_primary_key, self.filters.values()))
 
-        if not relation:
-            return None
+
+class RelationDef:
+    def __init__(self, model, name, obj, is_singular=False, joiner=None):
+        self.model = model
+        self.name = name
+        self._object_def = obj
+        self.is_singular = is_singular
+        self.joiner = joiner
+    
+    @property
+    def object_def(self):
+        if isinstance(self._object_def, str):
+            self._object_def = self.model.get_object(self._object_def)
         
-        schema, joiner = relation
-        return self.model.get_object(schema.__tablename__), joiner
+        return self._object_def
+    
+    def join(self, a, b):
+        if self.joiner:
+            return self.joiner(a, b)
+        else:
+            return select(a).select_from(join(a, b))
 
 
-class PermissionFunction:
-    def __init__(self, name, arguments=[]):
+class FilterDef:
+    def __init__(self, model, name, unique=None, primary_key=None):
+        self.model = model
+        self.name = name
+        self.is_primary_key = False
+        self.is_unique = False
+
+        if primary_key:
+            self.is_primary_key = True
+            self.is_unique = True
+
+            if unique is not None and unique is not True:
+                raise Exception("primary keys are always unique by definition")
+        
+        if unique:
+            self.is_unique = True
+
+
+class PermissionObject:
+    def __init__(self, model, name, arguments=None, error_message=None):
+        self.model = model
         self.arguments = arguments
         self.name = name
+        self.error_message = error_message
 
     def __call__(self, *values):
-        return InstanceObject(self.name, values)
+        if len(self.arguments) != len(values):
+            raise Exception(f"permission '{self.name}' expects {len(self.arguments)} parameters, but {len(values)} given")
+
+        return AnnotatedInstanceObject(
+            self.name,
+            map(lambda value: into_expression_ast(value, self.model), values),
+            error_message=self.error_message,
+        )
 
 
 class InstanceObject:
@@ -753,16 +547,22 @@ class InstanceObject:
         self.arguments = arguments
     
     def into_ast(self):
-        return InstanceExpression(self.name, [ into_ast(arg) for arg in self.arguments ])
+        return InstanceExpression(self.name, [ into_ast_part(arg) for arg in self.arguments ])
+
+
+class AnnotatedInstanceObject(InstanceObject):
+    def __init__(self, name, arguments, **kwargs):
+        super().__init__(name, arguments)
+        self.metadata = kwargs
 
 
 class ObjectModel:
     def __init__(self):
         self.objects = {}
     
-    def register_object(self, obj):
+    def register_object(self, name, obj):
         d = ObjectDef(self, obj)
-        self.objects[obj.__tablename__] = d
+        self.objects[name] = d
         return d
     
     def get_object(self, name):
@@ -772,68 +572,109 @@ class ObjectModel:
 class ExpressionType:
     pass
 
-class SelectionExpression(ExpressionType):
-    def __init__(self, obj, singular=False):
-        self.object = obj
-        self.is_singular = singular
 
-    def __repr__(self):
-        if self.is_singular:
-            return f'<Type: Selection (Singular)>'
-        else:
-            return f'<Type: Selection>'
-
-class InstanceExpressionType(ExpressionType):
-    def __init__(self, name, argument_count):
-        self.name = name
-        self.argument_count = argument_count
+class EvaluatedExpression:
+    def __init__(self, object_def=None, query=None, value=None, is_singular=None, is_literal=False, is_wildcard=False):
+        self.object_def = object_def
+        self.query = query
+        self.is_singular = is_singular if is_singular is not None else is_literal
+        self.is_literal = is_literal
+        self.value = value
+        self.is_wildcard = is_wildcard
+        self.known_values = {}
     
-    def __repr__(self):
-        return f'<Type: Instance (name={repr(self.name)}, arguments={self.argument_count})>'
+    @property
+    def primary_key(self):
+        if not self.is_singular:
+            raise Exception()
+        
+        filter_def = self.object_def.get_primary_key()
+
+        if filter_def.name in self.known_values:
+            return self.known_values[filter_def.name]
+        
+        raise Exception('primary key could not be inferred for the expression')
+
+    @property
+    def schema(self):
+        return self.object_def.schema
 
 
-class ExpressionTypeChecker(ExpressionVisitor):
+"""
+def into_ast(value):
+    if isinstance(value, Expression):
+        return value
+    elif isinstance(value, ExpressionObj):
+        return value.into_ast()
+    elif isinstance(value, str):
+        return Parser().parse(value)
+    else:
+        raise Exception("expected a string, an expression AST or an expression object")
+"""
+
+
+class ExpressionInterpreter(ExpressionVisitor):
     def __init__(self, model):
         self.model = model
     
-    def visit_instance_expression(self, name, arguments):
-        return InstanceExpressionType(name, len(arguments))
+    def visit_instance_expression(self, expr): 
+        pass
+
+    def visit_model_expression(self, expr):
+        obj_def = self.model.get_object(expr.name)
+        query = select([obj_def.schema])
+
+        return EvaluatedExpression(object_def=obj_def, query=query)
     
-    def visit_model_expression(self, name):
-        obj = self.model.get_object(name)
-        return SelectionExpression(obj)
-    
-    def visit_join_expression(self, lhs, name):
-        value_type, _ = lhs.get_relation(name)
-        return SelectionExpression(value_type)
-    
-    def visit_filter_expression(self, lhs, name, value):
-        filter_def = lhs.get_filter(name)
+    def visit_filter_expression(self, expr):
+        lhs = self.visit(expr.lhs)
+        value = self.visit(expr.value)
+
+        filter_def = lhs.object_def.get_filter(expr.name)
+
+        if filter_def is None:
+            raise Exception(f"no filter '{expr.name}' defined for object '{lhs.schema.__tablename__}'")
+        
+        a = aliased(lhs.schema, alias=lhs.query.subquery())
+
+        if value.is_literal:
+            result = select(a).where(getattr(a, expr.name) == value.value)
+        elif value.is_singular:
+            result = select(a).where(getattr(a, expr.name) == value.query)
+        else:
+            result = select(a).where(getattr(a, expr.name).in_(value.query))
 
         if filter_def.is_unique:
-            return SelectionExpression(lhs.model, singular=True)
-        else:
-            return lhs
+            lhs.is_singular = True
+
+            if value.is_literal:
+                lhs.known_values[expr.name] = value.value
+        
+        lhs.query = result
+        
+        return lhs
     
-    @staticmethod
-    def from_expr(model, expr):
-        return ExpressionTypeChecker(model).visit(expr)
+    def visit_join_expression(self, expr):
+        lhs = self.visit(expr.lhs)
 
+        relation_def = lhs.object_def.get_relation(expr.name) 
 
-def test():
-    from tsoha.models.permissions import model
-    from tsoha import db
+        if relation_def is None:
+            raise Exception(f"no relation '{expr.name}' defined for object '{lhs.schema.__tablename__}'")
+        
+        query = relation_def.join(relation_def.object_def.schema, aliased(lhs.schema, alias=lhs.query.subquery()))
 
-    p = Parser()
-    t = p.parse('group#id(1)')
-
-    tp = Parser(template=t)
-    e = tp.parse('$.members')
-
-    b = NewQueryBuilder(model)
-    query, kind = b.build(e)
-
-    print(query)
-    print(kind)
-
-    print(db.session.execute(query).all())
+        return EvaluatedExpression(
+            object_def=relation_def.object_def,
+            is_singular=relation_def.is_singular and lhs.is_singular,
+            query=query,
+        )
+    
+    def visit_wildcard_expression(self, _expr):
+        return EvaluatedExpression(is_wildcard=True)
+    
+    def visit_integer(self, value):
+        return EvaluatedExpression(is_literal=True, value=value)
+    
+    def visit_text(self, value):
+        return EvaluatedExpression(is_literal=True, value=value)
