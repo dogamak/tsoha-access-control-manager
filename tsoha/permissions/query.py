@@ -2,7 +2,7 @@ from sqlalchemy import select, join, and_
 from sqlalchemy.orm import aliased
 
 from tsoha import db
-from tsoha.models.permission import Permission, PermissionInstance, PermissionArgument, model
+from tsoha.models.permission import Permission, PermissionInstance, PermissionArgument, PermissionObjectModel
 from tsoha.permissions.dsl.ast import into_expression_ast
 from tsoha.permissions.evaluate import ExpressionInterpreter, EvaluatedExpression
 
@@ -79,5 +79,5 @@ class PermissionQueryer(ExpressionInterpreter):
 
 def query_permission(expr):
     expr = into_expression_ast(expr)
-    query = PermissionQueryer(model).build_query(expr)
+    query = PermissionQueryer(PermissionObjectModel).build_query(expr)
     return db.session.execute(query).all()

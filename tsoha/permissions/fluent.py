@@ -67,7 +67,6 @@ class PermissionConstructor:
             error_message=self.error_message,
         )
 
-
 class InstanceObject:
     def __init__(self, name, arguments):
         self.name = name

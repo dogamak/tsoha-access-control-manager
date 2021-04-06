@@ -1,7 +1,7 @@
 from tsoha import db
 from tsoha.permissions.evaluate import ExpressionInterpreter, EvaluatedExpression
 from tsoha.permissions.dsl.ast import InstanceExpression, into_expression_ast
-from tsoha.models.permission import Permission, PermissionInstance, PermissionArgument, model
+from tsoha.models.permission import Permission, PermissionInstance, PermissionArgument, PermissionObjectModel
 
 
 class PermissionAdder(ExpressionInterpreter):
@@ -53,7 +53,7 @@ def add_permission(expr):
     if not isinstance(expr, InstanceExpression):
         raise Exception('expression needs to be an permission instance')
 
-    instance = PermissionAdder(model).visit(expr)
+    instance = PermissionAdder(PermissionObjectModel).visit(expr)
 
     db.session.commit()
 

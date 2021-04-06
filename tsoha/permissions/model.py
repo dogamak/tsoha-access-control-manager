@@ -1,39 +1,69 @@
+import inspect
+
 from sqlalchemy import select, join
 
-from tsoha.permissions.dsl.ast import ModelExpression
-from tsoha.permissions.fluent import FluentExpression
+from tsoha.permissions.dsl.ast import ModelExpression, into_expression_ast
+from tsoha.permissions.fluent import FluentExpression, InstanceObject
 
-class ObjectModel:
-    def __init__(self):
-        self.objects = {}
+
+class ObjectModelMeta(type):
+    @staticmethod
     
-    def register_object(self, name, obj):
-        d = ObjectDef(self, obj)
-        self.objects[name] = d
-        return d
+    def __new__(mcls, name, bases, attrs):
+        cls = super().__new__(mcls, name, bases, attrs)
+
+        is_model_class = lambda v: isinstance(v, ObjectModelAttribute)
+
+        for name, value in inspect.getmembers(cls, is_model_class):
+            value.register(cls, name)
+
+        return cls
+
+
+class ObjectModelAttribute:
+    def __init__(self, name=None, model=None):
+        self.model = name
+        self.name = model
     
-    def get_object(self, name):
-        return self.objects[name]
+    def register(self, model, name):
+        if self.model is None:
+            self.model = model
+        
+        if self.name is None:
+            self.name = name
 
 
-class ObjectDef(FluentExpression):
-    def __init__(self, model, schema):
-        print(self)
-        super().__init__(self)
+class ObjectModel(metaclass=ObjectModelMeta):
+    objects = {}
+    permissions = {}
+    
+    @classmethod
+    def get_object(cls, name):
+        return cls.objects[name]
+
+
+class ObjectDefinition(ObjectModelAttribute, FluentExpression):
+    def __init__(self, schema):
+        ObjectModelAttribute.__init__(self)
+        FluentExpression.__init__(self, self)
+
         self.schema = schema
         self.relations = dict()
         self.filters = dict()
-        self.model = model
+    
+    def register(self, model, name):
+        super().register(model, name)
+        model.objects[name] = self
     
     def into_ast(self):
         return ModelExpression(self.schema.__tablename__)
 
     def relation(self, relation, *args, **kwargs):
-        self.relations[relation] = RelationDef(self.model, relation, *args, **kwargs)
+        self.relations[relation] = Relation(self.model, relation, *args, **kwargs)
         return self
     
     def add_filter(self, name, *args, **kwargs):
-        self.filters[name] = FilterDef(self.model, name, *args, **kwargs)
+        self.filters[name] = Filter(self.model, name, *args, **kwargs)
         return self
 
     def get_filter(self, name):
@@ -46,7 +76,7 @@ class ObjectDef(FluentExpression):
         return next(filter(lambda f: f.is_primary_key, self.filters.values()))
 
 
-class RelationDef:
+class Relation:
     def __init__(self, model, name, obj, is_singular=False, joiner=None):
         self.model = model
         self.name = name
@@ -68,7 +98,7 @@ class RelationDef:
             return select(a).select_from(join(a, b))
 
 
-class FilterDef:
+class Filter:
     def __init__(self, model, name, unique=None, primary_key=None):
         self.model = model
         self.name = name
@@ -84,3 +114,22 @@ class FilterDef:
         
         if unique:
             self.is_unique = True
+
+
+class Permission(ObjectModelAttribute):
+    def __init__(self, arguments=None):
+        super().__init__()
+        self.arguments = arguments or []
+
+    def register(self, model, name):
+        super().register(model, name)
+        model.permissions[name] = self
+
+    def __call__(self, *values):
+        if len(self.arguments) != len(values):
+            raise Exception(f"permission '{self.name}' expects {len(self.arguments)} parameters, but {len(values)} given")
+
+        return InstanceObject(
+            self.name,
+            map(lambda value: into_expression_ast(value, self.model), values),
+        )
