@@ -7,13 +7,16 @@ class FluentExpression:
         self.__model = model
     
     def __getattr__(self, name):
+        if name == '__model':
+            return self.__model
+
         if self.__model is None:
             return Relation(self, None, name, None)
 
         relationship = self.__model.get_relation(name)
 
         if relationship:
-            return Relation(self, self.__model, name, relationship)
+            return Relation(self, relationship.object_def, name, relationship)
     
     def filter(self, name, value):
         return Filter(self, self.__model, name, value)
@@ -32,7 +35,7 @@ class Filter(FluentExpression):
 
 class Relation(FluentExpression):
     def __init__(self, expr, model, name, definition):
-        super().__init__(model)
+        FluentExpression.__init__(self, model)
         self.expr = expr
         self.name = name
         self.definition = definition

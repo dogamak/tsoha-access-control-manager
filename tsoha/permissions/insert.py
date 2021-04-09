@@ -1,48 +1,49 @@
 from tsoha import db
 from tsoha.permissions.evaluate import ExpressionInterpreter, EvaluatedExpression
-from tsoha.permissions.dsl.ast import InstanceExpression, into_expression_ast
-from tsoha.models.permission import Permission, PermissionInstance, PermissionArgument, PermissionObjectModel
+from tsoha.permissions.dsl.ast import InstanceExpression, into_expression_ast, format_ast
+from tsoha.models.permission import PermissionExpression, ExpressionMatch, PermissionObjectModel
+from tsoha.permissions.visitor import Visitor
 
 
 class PermissionAdder(ExpressionInterpreter):
     def __init__(self, model):
         super().__init__(model)
 
+    @Visitor.visits(InstanceExpression)
     def visit_instance_expression(self, expr):
-        perm = Permission.query.filter(Permission.name == expr.name).first()
-
-        if perm is None:
-            perm = Permission(name=expr.name)
-            db.session.add(perm)
-
-        instance = PermissionInstance(
-            permission=perm,
-            expr=str(expr),
+        instance = PermissionExpression(
+            permission_name=expr.name,
+            expression=str(expr),
         )
-        
-        for arg_i, arg in enumerate(expr.arguments):
-            arg = self.visit(arg)
 
-            if isinstance(arg, EvaluatedExpression):
-                objects = db.session.execute(arg.query)
+        for arg_i, arg_expr in enumerate(expr.arguments):
+            arg_res = self.visit(arg_expr, as_dict=True)
 
-                for row in objects:
-                    obj = row[0]
+            arg_instance = arg_res.get(PermissionAdder)
 
-                    argument = PermissionArgument(
-                        permission_instance=instance,
-                        argument_number=arg_i,
-                        object_type=arg.schema.__tablename__,
-                        object_id=obj.id,
-                    )
-                    
-                    db.session.add(argument)
-            elif isinstance(arg, PermissionInstance):
-                arg.super_permission_id = instance.id
-                arg.super_permission_parameter_number = arg_i
-                db.session.add(arg)
-            else:
-                raise Exception()
+            if not arg_instance:
+                arg_instance = PermissionExpression(
+                    parent_expression=instance,
+                    parent_expression_argument_index=arg_i,
+                    expression=format_ast(arg_expr),
+                )
+
+                db.session.add(arg_instance)
+
+            objects = db.session.execute(arg_expr.query)
+
+            for row in objects:
+                obj = row[0]
+
+                match = ExpressionMatch(
+                    expression=instance,
+                    object_type=arg_expr.schema.__tablename__,
+                    object_id=obj.id,
+                )
+                
+                db.session.add(match)
+
+        db.session.add(instance)
         
         return instance
     
@@ -53,7 +54,8 @@ def add_permission(expr):
     if not isinstance(expr, InstanceExpression):
         raise Exception('expression needs to be an permission instance')
 
-    instance = PermissionAdder(PermissionObjectModel).visit(expr)
+    instance = PermissionAdder(PermissionObjectModel) \
+        .visit(expr)
 
     db.session.commit()
 

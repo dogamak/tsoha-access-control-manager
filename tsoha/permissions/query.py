@@ -2,82 +2,99 @@ from sqlalchemy import select, join, and_
 from sqlalchemy.orm import aliased
 
 from tsoha import db
-from tsoha.models.permission import Permission, PermissionInstance, PermissionArgument, PermissionObjectModel
-from tsoha.permissions.dsl.ast import into_expression_ast
+from tsoha.models.permission import Permission, PermissionExpression, ExpressionMatch, PermissionObjectModel
+from tsoha.permissions.dsl.ast import InstanceExpression, into_expression_ast
 from tsoha.permissions.evaluate import ExpressionInterpreter, EvaluatedExpression
+from tsoha.permissions.visitor import Visitor
+
+
+query_attr = VisitorAttribute('query')
+instance_attr = VisitorAttribute('instance')
 
 
 class PermissionQueryer(ExpressionInterpreter):
     def __init__(self, model):
         super().__init__(model)
     
-    def visit_instance_expression(self, expr):
-        def query_builder(query, instance):
-            selected = []
+    @Visitor.visits(InstanceExpression)
+    @Visitor.consumes(Visitor.original, query_attr, instance_attr)
+    def visit_instance_expression(self, expr, query, instance):
+        selected = []
 
-            for arg_i, arg in enumerate(expr.arguments):
-                arg = self.visit(arg)
+        for arg_i, arg in enumerate(expr.arguments):
+            sub_expr = aliased(PermissionExpression)
 
-                if isinstance(arg, EvaluatedExpression):
-                    if arg.is_wildcard:
-                        continue
+            query = join(query, sub_expr, and_(
+                sub_expr.parent_permission_id == instance.id,
+                sub_expr.parent_permission_argument_index == arg_i,
+            ))
 
-                    alias = aliased(PermissionArgument)
-                    obj_alias = aliased(arg.schema)
-                    selected.append((arg.object_def, obj_alias))
+            arg_dict = self.visit(
+                arg,
+                as_dict=True,
+                provide={
+                    query_attr: query,
+                    instance_attr: sub_expr,
+                },
+            )
 
-                    if arg.is_singular and arg.primary_key is not None:
-                        query = join(query, alias, and_(
-                            alias.permission_instance_id == instance.id,
-                            alias.argument_number == arg_i,
-                            alias.object_type == arg.schema.__tablename__,
-                            alias.object_id == arg.primary_key,
-                        ))
+            if not arg_dict.get(PermissionQueryer):
+                evaluated = arg_dict.get(ExpressionInterpreter)
 
-                        query = join(query, obj_alias, alias.object_id == obj_alias.id)
-                    else:
-                        a = aliased(arg.schema, alias=arg.query.subquery())
+                match = aliased(ExpressionMatch)
+                object_alias = aliased(evaluated.schema)
 
-                        query = join(query, alias, and_(
-                            alias.permission_instance_id == instance.id,
-                            alias.argument_number == arg_i,
-                            alias.object_type == arg.schema.__tablename__,
-                            alias.object_id.in_(select(a.id).select_from(a)),
-                        ))
+                query = join(query, match, match.expression_id == sub_expr.id)
+                query = join(query, object_alias, match.object_id == object_alias.id)
 
-                        query = join(query, obj_alias, alias.object_id == obj_alias.id)
-                else:
-                    sub_instance = aliased(PermissionInstance)
-
-                    name, builder = arg
-
-                    query = join(query, sub_instance, and_(
-                        sub_instance.super_permission_id == instance.id,
-                        sub_instance.super_permission_parameter_number == arg_i,
-                        sub_instance.permission_id == name,
-                    ))
-
-                    query, s = builder(query, sub_instance)
-                    selected += s
+                selected.append(object_alias)
             
-            return query, selected
-        
-        return expr.name, query_builder
+        return query, selected
     
     def build_query(self, expr):
-        name, builder = self.visit(expr)
+        instance = aliased(PermissionExpression)
 
-        instance = aliased(PermissionInstance)
-        perm = aliased(Permission)
+        query, selected = self.visit(
+            expr,
+            attr=PermissionQueryer,
+            provide={
+                query_attr: instance,
+                instance_attr: instance,
+            },
+        )
 
-        query = join(perm, instance)
-
-        query, selected = builder(query, instance)
-
-        return select([ s[1] for s in selected ]).select_from(query).where(perm.name == name)
+        return select([ s[1] for s in selected ]) \
+            .select_from(query) \
+            .where(and_(
+                instance.permission_name == expr.name,
+                instance.parent_permission_id == None,
+            ))
 
 
 def query_permission(expr):
     expr = into_expression_ast(expr)
     query = PermissionQueryer(PermissionObjectModel).build_query(expr)
     return db.session.execute(query).all()
+
+def query_expression(expr):
+    expr = into_expression_ast(expr)
+    evaluated = ExpressionInterpreter(PermissionObjectModel).visit(expr)
+    return db.session.execute(evaluated.query).all()
+
+def match_expression(expr, instance):
+    expr = into_expression_ast(expr)
+    evaluated = ExpressionInterpreter(PermissionObjectModel).visit(expr)
+
+    if instance.__tablename__ != evaluated.schema.__tablename__:
+        return False
+    
+    a = aliased(evaluated.schema, alias=evaluated.query.subquery())
+    
+    query = select(a).select_from(a).where(a.id == instance.id).exists().select()
+
+    row = db.session.execute(query).first()[0]
+
+    if not row:
+        return False
+    
+    return row[0]

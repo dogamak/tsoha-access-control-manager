@@ -5,28 +5,41 @@ from tsoha.permissions.fluent import PermissionConstructor
 
 from sqlalchemy import select, join, exists, not_, and_
 from sqlalchemy.orm import aliased
+from sqlalchemy.ext.ordering_list import ordering_list
 
-class Permission(db.Model):
-    name = db.Column(db.String, primary_key=True)
-
-class PermissionInstance(db.Model):
+class PermissionExpression(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    permission_id = db.Column(db.String, db.ForeignKey(Permission.name), nullable=False)
-    expr = db.Column(db.String, nullable=False)
-    super_permission_id = db.Column(db.Integer, db.ForeignKey(id))
-    super_permission_parameter_number = db.Column(db.Integer)
 
-    permission = db.relationship(Permission)
-    super_permission = db.relationship('PermissionInstance', remote_side=[id])
+    permission_name = db.Column(db.String)
+    parent_expression_id = db.Column(db.Integer, db.ForeignKey(id))
+    parent_expression_argument_index = db.Column(db.Integer)
+    expression = db.Column(db.String, nullable=False)
 
-class PermissionArgument(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    permission_instance_id = db.Column(db.Integer, db.ForeignKey(PermissionInstance.id), nullable=False)
-    argument_number = db.Column(db.Integer, nullable=False)
-    object_type = db.Column(db.String, nullable=False)
-    object_id = db.Column(db.Integer, nullable=False)
+    parent_expression = db.relationship(
+        'PermissionExpression',
+        remote_side=[id],
+        backref='arguments',
+    )
 
-    permission_instance = db.relationship(PermissionInstance)
+    arguments = db.relationship(
+        'PermissionExpression',
+        order_by=parent_expression_argument_index,
+        collection_class=ordering_list(
+            parent_expression_argument_index,
+            count_from=0,
+        ),
+    )
+
+
+class ExpressionMatch(db.Model):
+    expression_id = db.Column(db.Integer, db.ForeignKey(PermissionExpression.id), primary_key=True)
+    object_type = db.Column(db.String, primary_key=True)
+    object_id = db.Column(db.Integer, primary_key=True)
+
+    expression = db.relationship(
+        'PermissionExpression',
+        backpopulated='matches',
+    )
 
 
 secondary_join = lambda s:   lambda a, q: select([a]).select_from(join(q, s).join(a))
@@ -36,16 +49,16 @@ join_on_local  = lambda key: lambda a, q: select([a]).select_from(join(q, a, get
 
 class PermissionObjectModel(ObjectModel):
     user = ObjectDefinition(User) \
-        .relation('groups', 'group', joiner=secondary_join(GroupMembership)) \
-        .relation('subordinates', 'user', joiner=join_on_remote('supervisor_id')) \
-        .relation('supervisor', 'user', joiner=join_on_local('supervisor_id')) \
+        .relation('groups',       Group, secondary=GroupMembership) \
+        .relation('subordinates', User,  remote_field='supervisor_id') \
+        .relation('supervisor',   User,  local_field='supervisor_id') \
         .add_filter('id', primary_key=True) \
         .add_filter('username', unique=True)
     
     group = ObjectDefinition(Group) \
-        .relation('members', 'user', joiner=secondary_join(GroupMembership)) \
-        .relation('subgroups', 'group', joiner=join_on_remote('parent_id')) \
-        .relation('parent', 'group', joiner=join_on_local('parent_id'), is_singular=True) \
+        .relation('members',   User,  secondary=GroupMembership) \
+        .relation('subgroups', Group, remote_field='parent_id') \
+        .relation('parent',    Group, local_field='parent_id') \
         .add_filter('id', primary_key=True)
 
     create_user = ModelPermission(['current_user', 'target_group'])
